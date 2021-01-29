@@ -6,6 +6,7 @@
 # from scipy.special import expit
 from sklearn.utils.extmath import softmax
 from sklearn.model_selection import train_test_split
+from sklearn.base import clone
 import numbers
 import numpy as np
 import warnings
@@ -14,10 +15,107 @@ import warnings
 import logging
 
 log = logging.getLogger(__name__)
+import copy
 
 
 # TODO: Clean up
 class EBMUtils:
+    @staticmethod
+    def merge_models(models):
+        """ Merges multiple EBM models trained on the same dataset.
+
+        Args:
+            models: List of EBM models to be merged.
+
+        Returns:
+            An EBM model with averaged mean and standard deviation of input models.
+        """
+
+        if len(models) < 2:
+            raise Exception("atleast two models are required to merge.")
+
+        ebm = clone(models[0])
+       
+        ebm.additive_terms_ =[]
+        ebm.term_standard_deviations_ = []
+        ebm.bagged_models_=[]
+
+
+        # if not all([  (set(ebm.feature_types) == set(model.feature_types)) & (set(ebm.feature_types) == set(model.feature_types) for model in models]):
+        #     raise Exception("all models should have the same feature names and feature types.")
+
+        if not all([  model.preprocessor_.col_types_ == ebm.preprocessor_.col_types_ for model in models]):
+            raise Exception("all models should have the same types of features. Probably the models are trained using different datasets")
+        
+        # if is_classifier(ebm):
+        #     if not all([  is_classifier(model) for model in models]):
+        #         raise Exception("all models should be the same type.")
+        #     else:
+        #         if not all([  ebm.n_classes_ == model.n_classes_ for model in models]):
+        #              raise Exception("all models should have the same number of classes.")
+        # else:
+        #     if any([is_classifier(model) for model in models]):
+        #         raise Exception("all models should be the same type.")
+        
+        # At firest building new feature groups and interactions
+        # for index, feature_group in enumerate(ebm.feature_groups_):           
+
+        #     # interction tuples
+        #     if len(feature_group) != 1:
+        #         # Exluding interction tuples from bin edge merges              
+        #         continue
+
+        #     log_odds_tensors = []
+
+        #     # Normalzing the bin edges for different models for each feature group
+        #     if index in ebm.preprocessor_.col_bin_edges_.keys():
+
+        #         print('---------', index) #, len(ebm1.preprocessor_.col_bin_edges_[index]))
+        #         # new_bin_edges = ebm.preprocessor_.col_bin_edges_[index]
+
+        #         # list(ebm1.preprocessor_.col_bin_edges_.keys())[0]
+        #         # for model in models:
+        #         #     print(len(model.preprocessor_.col_bin_edges_[index]))
+        #         #     new_bin_edges = set(new_bin_edges).union(set(model.preprocessor_.col_bin_edges_[index]))
+               
+        #         new_bin_edges = sorted(set().union(*[ set(model.preprocessor_.bin_edges_[index]) for model in models]]))
+
+        #         print(' -->' ,len(new_bin_edges))
+            
+        #     # Exisitng approach
+        #     for model in models:
+
+        #         # ??, do we need to support multi level merges (merge of merged models)? 
+        #         ebm.bagged_models_.extend(model.bagged_models_)
+
+        #         for estimator in model.bagged_models_:
+        #             # if have different bin_edges for this fearture group:                    
+        #             model_bin_edges = model.preprocessor_.bin_edges_[index]
+
+        #             ne = np.searchsorted(model_bin_edges, new_bin_edges)
+
+        #             mvalues = estimator.model_[index]
+
+        #             # expanding the exsiting model_ values to cover the expanded new bin edges
+        #             new_model_ = [ mvalues[x-1] if x > 0 and x <=len(mvalues) else np.nan for x in ne[1:] ])
+
+        #             # new_model_ = expand( estimator.model_[index] , new_bin_edges )
+        #             # log_odds_tensors.append(estimator.model_[index])
+        #             log_odds_tensors.append(new_model_)
+
+        #     # averaged_model = np.average(np.array(log_odds_tensors), axis=0)
+        #     averaged_model = np.nanmean(np.array(log_odds_tensors), axis=0)
+        #     model_errors = np.std(np.array(log_odds_tensors), axis=0)
+
+        #     ebm.additive_terms_.append(averaged_model)
+        #     ebm.term_standard_deviations_.append(model_errors)
+
+        #     # Exisitng approach
+
+        # estimator.feature_groups_ = new_feature_groups
+
+        return ebm
+
     @staticmethod
     def normalize_initial_random_seed(seed):  # pragma: no cover
         # Some languages do not support 64-bit values.  Other languages do not support unsigned integers.
