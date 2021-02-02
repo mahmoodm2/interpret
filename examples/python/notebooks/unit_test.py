@@ -113,10 +113,6 @@ new_features =[]
 
 feature_len = len(ebm.preprocessor_.feature_names)
 
-# for index, feature_group in enumerate(ebm.feature_groups_[:]):
-
-#         if len(feature_group) == 1:         
-#             new_features.append((feature_group, ebm.feature_names[index] , ebm.feature_types[index]))
 
 for model in models:  
     for index, feature_group in enumerate(model.feature_groups_):
@@ -125,59 +121,43 @@ for model in models:
             new_interactions.add( (feature_group, model.feature_names[index] , model.feature_types[index]))
        
 
-
 for index, feature_group in enumerate(ebm.feature_groups_):           
 
-            # interction tuples
-            if len(feature_group) != 1:
-                # Exluding interction tuples from bin edge merges              
-                continue
+        # interction tuples
+        if len(feature_group) != 1:
+            # Exluding interction tuples from bin edge merges              
+            continue
 
-            log_odds_tensors = []
+        log_odds_tensors = []
 
-            # Normalzing the bin edges for different models for each feature group
-            if index in ebm.preprocessor_.col_bin_edges_.keys():
+        # Merging the bin edges for different models for each feature group
+        if index in ebm.preprocessor_.col_bin_edges_.keys():           
+                            
+            merged_bin_edges = sorted(set().union(*[ set(model.preprocessor_.col_bin_edges_[index]) for model in models]))
+        
+        for model in models:
+           
+            # ebm.bagged_models_.extend(model.bagged_models_)
 
-                print('---------', index) #, len(ebm1.preprocessor_.col_bin_edges_[index]))
-                # new_bin_edges = ebm.preprocessor_.col_bin_edges_[index]
+            for estimator in model.bagged_models_:
+                # if have different bin_edges for this fearture group:                    
+                model_bin_edges = model.preprocessor_.col_bin_edges_[index]
 
-                # list(ebm1.preprocessor_.col_bin_edges_.keys())[0]
-                # for model in models:
-                #     print(len(model.preprocessor_.col_bin_edges_[index]))
-                #     new_bin_edges = set(new_bin_edges).union(set(model.preprocessor_.col_bin_edges_[index]))
-               
-                new_bin_edges = sorted(set().union(*[ set(model.preprocessor_.col_bin_edges_[index]) for model in models]))
+                ne = np.searchsorted(model_bin_edges, merged_bin_edges + [np.inf])
 
-                print(' -->' ,len(new_bin_edges))
-            
-            # Exisitng approach
-            for model in models:
+                mvalues = estimator.model_[index][1:] # ignoring the the first element
 
-                # ??, do we need to support multi level merges (merge of merged models)? 
-                # ebm.bagged_models_.extend(model.bagged_models_)
+                # expanding the exsiting model_ values to cover the expanded new bin edges
+                new_model_ = [ mvalues[x-1] if x > 0 and x <=len(mvalues) else np.nan for x in ne[1:] ]
+          
+                log_odds_tensors.append(new_model_)
 
-                for estimator in model.bagged_models_:
-                    # if have different bin_edges for this fearture group:                    
-                    model_bin_edges = model.preprocessor_.col_bin_edges_[index]
+        # Using nan versions to average(std) only on regular values        
+        averaged_model = np.nanmean(np.array(log_odds_tensors), axis=0)
+        model_errors = np.nanstd(np.array(log_odds_tensors), axis=0)
 
-                    ne = np.searchsorted(model_bin_edges, new_bin_edges + [np.inf])
-
-                    mvalues = estimator.model_[index][1:]
-
-                    # expanding the exsiting model_ values to cover the expanded new bin edges
-                    new_model_ = [ mvalues[x-1] if x > 0 and x <=len(mvalues) else np.nan for x in ne[1:] ]
-
-                    new_model_ = [estimator.model_[index][0]] + new_model_
-
-                    # new_model_ = expand( estimator.model_[index] , new_bin_edges )
-                    # log_odds_tensors.append(estimator.model_[index])
-                    log_odds_tensors.append(new_model_)
-
-            averaged_model = np.nanmean(np.array(log_odds_tensors), axis=0)
-            model_errors = np.std(np.array(log_odds_tensors), axis=0)
-
-            ebm.additive_terms_.append(averaged_model)
-            ebm.term_standard_deviations_.append(model_errors)
+        ebm.additive_terms_.append(averaged_model)
+        ebm.term_standard_deviations_.append(model_errors)
 
 
 # main_indices + new_pair_indices
