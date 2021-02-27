@@ -32,7 +32,7 @@ class EBMUtils:
         return np.sqrt(variance)
 
     @staticmethod
-    def merge_models(models):
+    def merge_models(models,):
         """ Merging multiple EBM models trained on the same dataset.
 
         Args:
@@ -46,8 +46,7 @@ class EBMUtils:
             raise Exception("at least two models are required to merge.")
             return
 
-        # ebm = clone(models[0])
-       
+        # ebm = clone(models[0])       
         # ebm.preprocessor_ = clone(models[0].preprocessor_)
         # ebm.pair_preprocessor_ = clone(models[0].pair_preprocessor_)
 
@@ -56,6 +55,8 @@ class EBMUtils:
         ebm.additive_terms_ =[]
         ebm.term_standard_deviations_ = []
         ebm.bagged_models_=[]
+
+        # TODO warning for not supportig interaction features and not exception
 
         if not all([  model.preprocessor_.col_types_ == ebm.preprocessor_.col_types_ for model in models]):
             raise Exception("All models should have the same types of features. Probably the models are trained using different datasets")
@@ -92,6 +93,10 @@ class EBMUtils:
 
         ebm.additive_terms_ = []
         ebm.term_standard_deviations_ = []
+
+        # TODO many attributes are not valid in the merged model
+        # TODO keeping estimators  for all models for pre-processor
+        # TODO keeping estimators  for all models for pair_preprocessor
  
         for index, feature_group in enumerate(ebm.feature_groups_):           
 
@@ -124,8 +129,7 @@ class EBMUtils:
                         mvalues = estimator.model_[index][1:] 
 
                         # expanding the model_ values to cover all the new merged bin edges
-                        # x represents the index of the merged bin edge in the new merged bin edges
-                        # new_model_ = [ mvalues[x-1] if x > 0 and x <=len(mvalues) else np.nan for x in bin_indexs[1:] ]
+                        # x represents the index of the merged bin edge in the new merged bin edges                       
                         new_model_ = [ mvalues[x-1] if x > 0 and x <=len(mvalues) else 0. for x in bin_indexs[1:] ]
 
                         wvalues = bin_counts[index][1:] 
@@ -148,7 +152,7 @@ class EBMUtils:
                     for estimator in model.bagged_models_:
 
                         mvalues = estimator.model_[index]  
-                        # new_model_ =  [ mvalues[i] if i else np.nan for i in mask]
+                        # new_model_ =  [ mvalues[i] if i else np.nan for i in mask] , missing values 3 methods: 
                         new_model_ =  [ mvalues[i] if i else 0.0 for i in mask]
 
                         wvalues = bin_counts[index]
@@ -162,6 +166,8 @@ class EBMUtils:
             
             averaged_model = np.average(log_odds_tensors, axis=0 , weights=bin_weights )
             model_errors = EBMUtils.weighted_std(np.array(log_odds_tensors), axis=0, weights= np.array(bin_weights) )
+
+            # TODO weighted avg for missing values as well
 
             averaged_model = np.append(0., averaged_model)
             ebm.additive_terms_.append(averaged_model)
