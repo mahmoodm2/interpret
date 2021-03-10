@@ -20,7 +20,7 @@ import copy
 # %%
 if True:
     df = pd.read_csv(
-        "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data",
+        "http://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data",
         header=None)
     df.columns = [
         "Age", "WorkClass", "fnlwgt", "Education", "EducationNum",
