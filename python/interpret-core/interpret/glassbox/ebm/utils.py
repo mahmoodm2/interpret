@@ -46,42 +46,35 @@ class EBMUtils:
             raise Exception("at least two models are required to merge.")
             return
 
-        # ebm = clone(models[0])       
-        # ebm.preprocessor_ = clone(models[0].preprocessor_)
-        # ebm.pair_preprocessor_ = clone(models[0].pair_preprocessor_)
-
+        # many features are invalid. preprocessor_ and pair_preprocessor_ are cloned form the first model.
         ebm = copy.deepcopy(models[0]) 
+        
 
         ebm.additive_terms_ =[]
         ebm.term_standard_deviations_ = []
         ebm.bagged_models_=[]
-
-        # TODO warning for not supportig interaction features and not exception
-
+        
+        warnings.warn("Interaction features are not supported.")
+         
         if not all([  model.preprocessor_.col_types_ == ebm.preprocessor_.col_types_ for model in models]):
-            raise Exception("All models should have the same types of features. Probably the models are trained using different datasets")
+            raise Exception("All models should have the same types of features.")
        
         if not all([  model.preprocessor_.col_bin_edges_.keys() == ebm.preprocessor_.col_bin_edges_.keys() for model in models]):
-                    raise Exception("All models should have the same types of features. Probably the models are trained using different datasets")
+                    raise Exception("All models should have the same types of numeric features.")
 
 
         if not all([  model.preprocessor_.col_mapping_.keys() == ebm.preprocessor_.col_mapping_.keys() for model in models]):
-                    raise Exception("All models should have the same types of features. Probably the models are trained using different datasets")
+                    raise Exception("All models should have the same types of categorical features.")
 
         if is_classifier(ebm):
                 if not all([is_classifier(model) for model in models]):
                     raise Exception("All models should be the same type.")
-                # else:
-                #     if not all([ebm.classes_ == model.classes_ for model in models]):
-                #             raise Exception("All models should have the same number of classes.")
         else:
-                #ebm is not a classifier, checking for at least one classifier in other models
+                #if ebm is a regressor
                 if any([is_classifier(model) for model in models]):
                     raise Exception("All models should be the same type.")
 
         new_feature_groups = []
-        # merged_interactions =set()
-
         main_feature_len = len(ebm.preprocessor_.feature_names)
 
         ebm.feature_groups_ = ebm.feature_groups_[:main_feature_len] 
@@ -90,53 +83,65 @@ class EBMUtils:
 
         ebm.global_selector = ebm.global_selector.iloc[:main_feature_len]
         ebm.interactions = 0
-
+        
+        warnings.warn("Interaction features are not supported.")
+        
+       
         ebm.additive_terms_ = []
         ebm.term_standard_deviations_ = []
-
-        # TODO many attributes are not valid in the merged model
-        # TODO keeping estimators  for all models for pre-processor
-        # TODO keeping estimators  for all models for pair_preprocessor
+        
+        bagged_models = []
+        for x in models:
+            bagged_models.extend(x.bagged_models_) #             
+        ebm.bagged_models_ = bagged_models
  
         for index, feature_group in enumerate(ebm.feature_groups_):           
 
-            # interction tuples
-            if len(feature_group) != 1:
-                # Exluding interction fwarures from merging
+            # Exluding interaction features 
+            if len(feature_group) != 1:                
                 continue
 
             log_odds_tensors = []
             bin_weights = []
+            
             # numeric features
             if index in ebm.preprocessor_.col_bin_edges_.keys():           
-                                
+                        
+                # merging all bin edges for the current feature across all models.        
                 merged_bin_edges = sorted(set().union(*[ set(model.preprocessor_.col_bin_edges_[index]) for model in models]))
                 
                 ebm.preprocessor_.col_bin_edges_[index] = np.array(merged_bin_edges)
             
+                estimator_idx=0
                 for model in models:            
-                # Merging the bin edges for different models for each feature group
-                    model_bin_edges = model.preprocessor_.col_bin_edges_[index]
+                    # Merging the bin edges for different models for each feature group
+                    bin_edges = model.preprocessor_.col_bin_edges_[index]
+                    bin_counts = model.preprocessor_.col_bin_counts_[index]
 
-                    bin_indexs = np.searchsorted(model_bin_edges, merged_bin_edges + [np.inf])
-                    
-                    bin_counts = model.preprocessor_.col_bin_counts_
+                    #bin_idx contains the index of each new merged bin edges against the existing bin edges
+                    bin_idx = np.searchsorted(bin_edges, merged_bin_edges + [np.inf])                  
+                                        
                     # All the estimators of one ebm model share the same bin edges
                     for estimator in model.bagged_models_: 
 
-                        # if have different bin_edges for this fearture group:       
-                        # ignoring the the first element as reserved for futur.                              
-                        mvalues = estimator.model_[index][1:] 
+                        mvalues = estimator.model_[index]  
+                                                
+                        # the first element of adjusted bin indexes is used for weighted average of misssing values.
+                        adj_bin_idx = [0] + ( [ x+1 for x in bin_idx ])
+                                               
+                        # expanding the prediction values to cover all the new merged bin edges                                              
+                        new_model_ = [ mvalues[x] for x in adj_bin_idx ]
 
-                        # expanding the model_ values to cover all the new merged bin edges
-                        # x represents the index of the merged bin edge in the new merged bin edges                       
-                        new_model_ = [ mvalues[x-1] if x > 0 and x <=len(mvalues) else 0. for x in bin_indexs[1:] ]
-
-                        wvalues = bin_counts[index][1:] 
-                        new_weights =[ wvalues[x-1] if x > 0 and x <=len(mvalues) else 0. for x in bin_indexs[1:] ]
+                        # updating the new EBM model estimator predictions with the new extended predictions
+                        ebm.bagged_models_[estimator_idx].model_[index] = new_model_
+                        
+                        # bin counts are used as weights to calculate weighted average of new merged bins.                        
+                        weights =[ bin_counts[x] for x in adj_bin_idx ]
                         
                         log_odds_tensors.append(new_model_)
-                        bin_weights.append( new_weights)
+                        bin_weights.append( weights)
+                        
+                        estimator_idx +=1
             else:
                 # Categorical features
                 merged_col_mapping = sorted(set().union(*[ set(model.preprocessor_.col_mapping_[index]) for model in models]))
@@ -144,37 +149,33 @@ class EBMUtils:
                 ebm.preprocessor_.col_mapping_[index] = dict( (key, idx +1) for idx, key in enumerate(merged_col_mapping))
                 
                 for model in models: 
-                    
+                                        
                     bin_counts = model.preprocessor_.col_bin_counts_
 
+                    # mask contains the category values for common categories and None for missing ones for each categorical feature
                     mask = [ model.preprocessor_.col_mapping_[index].get(col, None ) for col in merged_col_mapping]
 
                     for estimator in model.bagged_models_:
 
-                        mvalues = estimator.model_[index]  
-                        # new_model_ =  [ mvalues[i] if i else np.nan for i in mask] , missing values 3 methods: 
+                        mvalues = estimator.model_[index]                           
                         new_model_ =  [ mvalues[i] if i else 0.0 for i in mask]
 
-                        wvalues = bin_counts[index]
-                        new_weights =[ wvalues[i] if i else 0.0 for i in mask ]
+                        bvalues = bin_counts[index]
+                        weights =[ bvalues[i] if i else 0.0 for i in mask ]
                     
                         log_odds_tensors.append(new_model_)
-                        bin_weights.append( new_weights)
+                        bin_weights.append( weights)
             
-            # averaged_model = np.nanmean(np.array(log_odds_tensors), axis=0)
-            # # model_errors = np.nanstd(np.array(log_odds_tensors), axis=0)
             
+            if all([ w[0]==0 for w in bin_weights ])  :
+                 for bw in bin_weights:
+                     bw[0] = 1
+                     
             averaged_model = np.average(log_odds_tensors, axis=0 , weights=bin_weights )
             model_errors = EBMUtils.weighted_std(np.array(log_odds_tensors), axis=0, weights= np.array(bin_weights) )
 
-            # TODO weighted avg for missing values as well
-
-            averaged_model = np.append(0., averaged_model)
             ebm.additive_terms_.append(averaged_model)
-
-            model_errors = np.append(0. , model_errors )
             ebm.term_standard_deviations_.append(model_errors)
-
            
         return ebm
 
