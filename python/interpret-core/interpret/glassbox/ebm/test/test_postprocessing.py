@@ -31,7 +31,7 @@ def test_multiclass_postprocess_smoke():
 
     assert "intercepts" in results
     assert "feature_graphs" in results
-
+    
 def test_merge_models():
     
     data = adult_classification()
@@ -65,7 +65,8 @@ def test_merge_models():
     
     valid_ebm(merged_ebm)
 
-    global_exp = clf.explain_global()
-    local_exp = clf.explain_local(X_te[:5, :], y_te[:5])
+    global_exp = merged_ebm.explain_global()
+    local_exp = merged_ebm.explain_local(X_te[:5, :], y_te[:5])
 
-    _smoke_test_explanations(global_exp, local_exp, 6000)   
+    _smoke_test_explanations(global_exp, local_exp, 6000) 
+

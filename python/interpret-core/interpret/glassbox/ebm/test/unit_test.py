@@ -1,7 +1,5 @@
 # To add a new cell, type '# %%'
 # To add a new markdown cell, type '# %% [markdown]'
-# %% [markdown]
-# ## Setup a classification experiment
 
 # %%
 import pickle
@@ -16,7 +14,58 @@ from interpret.glassbox import ExplainableBoostingClassifier, LogisticRegression
 import numpy as np
 import copy
 
+from interpret.glassbox.ebm.test.test_postprocessing import test_merge_models
 
+
+# %%
+
+from ..postprocessing import multiclass_postprocess
+from ..ebm import ExplainableBoostingRegressor, ExplainableBoostingClassifier
+from .test_ebm import valid_ebm, _smoke_test_explanations
+from interpret.glassbox.ebm.utils import *
+from ....test.utils import  adult_classification
+import numpy as np
+   
+data = adult_classification()
+X = data["full"]["X"]
+y = data["full"]["y"]
+X_te = data["test"]["X"]
+y_te = data["test"]["y"]   
+
+seed =1
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=seed)
+ebm1 = ExplainableBoostingClassifier(random_state=seed, n_jobs=-1)
+
+ebm1.fit(X_train, y_train)  
+
+seed +=10
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=seed)
+
+ebm2 = ExplainableBoostingClassifier(random_state=seed, n_jobs=-1)
+ebm2.fit(X_train, y_train)  
+
+seed +=10
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=seed)
+
+ebm3 = ExplainableBoostingClassifier(random_state=seed, n_jobs=-1)
+ebm3.fit(X_train, y_train) 
+    
+models = [ebm1, ebm2 , ebm3]
+merged_ebm = EBMUtils.merge_models(models=models)
+
+ebm_global = merged_ebm.explain_global(name='EBM')
+
+valid_ebm(merged_ebm)
+
+global_exp = merged_ebm.explain_global()
+local_exp = merged_ebm.explain_local(X_te[:5, :], y_te[:5])
+
+# %%
+
+_smoke_test_explanations(global_exp, local_exp, 6000) 
+
+# %%
+test_merge_models()
 # %%
 if True:
     df = pd.read_csv(
@@ -90,26 +139,30 @@ eglobal_exp = merged_ebm.explain_global()
 local_exp = merged_ebm.explain_local(X_test.iloc[:5, :], y_test[:5])
 
 # %%
-# from .test_ebm import valid_ebm, _smoke_test_explanations
+from .test_postprocessing import test_merge_models
 
-# _smoke_test_explanations(global_exp, local_exp, 6000) 
-# interpret-core.glassbox.provider.visual
-from ....python import preserve, show, shutdown_show_server, set_show_addr
-# from .... import preserve, show, shutdown_show_server, set_show_addr
+test_merge_models()
 
-set_show_addr(("127.0.0.1", port))
+  
 
-# Smoke test: should run without crashing.
-preserve(global_exp)
-preserve(local_exp)
-show(global_exp)
-show(local_exp)
+# # _smoke_test_explanations(global_exp, local_exp, 6000) 
+# # interpret-core.glassbox.provider.visual
+# from ....python import preserve, show, shutdown_show_server, set_show_addr
+# # from .... import preserve, show, shutdown_show_server, set_show_addr
 
-# Check all features for global (including interactions).
-for selector_key in global_exp.selector[global_exp.selector.columns[0]]:
-    preserve(global_exp, selector_key)
+# set_show_addr(("127.0.0.1", port))
 
-shutdown_show_server()
+# # Smoke test: should run without crashing.
+# preserve(global_exp)
+# preserve(local_exp)
+# show(global_exp)
+# show(local_exp)
+
+# # Check all features for global (including interactions).
+# for selector_key in global_exp.selector[global_exp.selector.columns[0]]:
+#     preserve(global_exp, selector_key)
+
+# shutdown_show_server()
 # %%
 
 ebm1 = ExplainableBoostingClassifier(random_state=seed, n_jobs=-1)
